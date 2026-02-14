@@ -56,110 +56,99 @@ async def get_cookies_via_playwright(
                 )
                 return None
 
-            logger.info("Дополнительное ожидание 2 секунды")
-            await page.wait_for_timeout(2000)
+            logger.info("Обнаружен 429 - это капча, начинаем решение")
 
-            # Cookie consent
-            logger.info("Проверка баннера cookie consent")
-            deny_btn = page.locator(
-                'div.buttons-row button[data-action-type="deny"], button.uc-deny-button, #deny'
-            ).first
+            after_captcha = True
+            sitekey = None
+
             try:
-                await deny_btn.wait_for(state="visible", timeout=10000)
-                logger.info("Баннер cookie consent найден — кликаем 'Ablehnen'")
-                await deny_btn.click()
-                await page.wait_for_timeout(1000)
-            except Exception:
-                logger.debug("Баннер cookie consent не появился")
+                logger.info("Поиск sitekey reCAPTCHA")
+                await page.wait_for_selector("[data-sitekey]", timeout=15000)
+                el = await page.query_selector("[data-sitekey]")
+                if el:
+                    sitekey = await el.get_attribute("data-sitekey")
+                    logger.info(f"Найден sitekey в основном документе: {sitekey}")
+                if not sitekey:
+                    logger.info("sitekey не найден в основном, ищем в iframe")
+                    frame = page.frame_locator("iframe[src*='recaptcha']").first
+                    if frame:
+                        el = await frame.locator(".g-recaptcha[data-sitekey]").first
+                        if el:
+                            sitekey = await el.get_attribute("data-sitekey")
+                            logger.info(f"Найден sitekey в iframe: {sitekey}")
+            except Exception as e:
+                logger.warning(f"Не удалось найти sitekey: {e}")
 
-            after_captcha = False
-
-            if status == 429:
-                logger.info("Обнаружен 429 — это капча, начинаем решение")
-                after_captcha = True
-
-                sitekey = None
-                logger.debug("Поиск sitekey reCAPTCHA")
-                try:
-                    await page.wait_for_selector("[data-sitekey]", timeout=15000)
-                    el = await page.query_selector("[data-sitekey]")
-                    if el:
-                        sitekey = await el.get_attribute("data-sitekey")
-                        logger.info(f"Найден sitekey в основном документе: {sitekey}")
-                    if not sitekey:
-                        logger.debug("sitekey не найден в основном, ищем в iframe")
-                        frame = page.frame_locator("iframe[src*='recaptcha']").first
-                        if frame:
-                            el = await frame.locator(".g-recaptcha[data-sitekey]").first
-                            if el:
-                                sitekey = await el.get_attribute("data-sitekey")
-                                logger.info(f"Найден sitekey в iframe: {sitekey}")
-                except Exception as e:
-                    logger.warning(f"Не удалось найти sitekey: {e}")
-
-                if sitekey and rucaptcha_api_key:
-                    logger.info(f"Начинаем решение капчи | sitekey={sitekey}")
-                    token = solve_recaptcha_rucaptcha(
-                        sitekey, page_url, rucaptcha_api_key
-                    )
-                    if token:
-                        logger.info("Токен успешно получен, подставляем в страницу")
-                        await page.evaluate(
-                            """
-                            (token) => {
-                                const textarea = document.getElementById('g-recaptcha-response')
-                                    || document.querySelector('[name="g-recaptcha-response"]');
-                                if (textarea) {
-                                    textarea.innerHTML = token;
-                                    textarea.value = token;
-                                }
-                                if (typeof ___grecaptcha_cfg !== 'undefined') {
-                                    const clients = Object.values(___grecaptcha_cfg.clients || {});
-                                    for (const c of clients) {
-                                        const callbacks = c.callback || [];
-                                        if (callbacks.length) callbacks.forEach(f => f(token));
-                                    }
-                                }
-                                const cb = window.___recaptchaCallback || window.onRecaptchaSuccess;
-                                if (typeof cb === 'function') cb(token);
+            if sitekey and rucaptcha_api_key:
+                logger.info(f"Начинаем решение капчи | sitekey={sitekey}")
+                token = solve_recaptcha_rucaptcha(sitekey, page_url, rucaptcha_api_key)
+                if token:
+                    logger.info("Токен успешно получен, подставляем в страницу")
+                    await page.evaluate(
+                        """
+                        (token) => {
+                            const textarea = document.getElementById('g-recaptcha-response')
+                                || document.querySelector('[name="g-recaptcha-response"]');
+                            if (textarea) {
+                                textarea.innerHTML = token;
+                                textarea.value = token;
                             }
-                            """,
-                            token,
-                        )
-                        logger.debug("Токен подставлен, ждём 2 секунды")
-                        await page.wait_for_timeout(2000)
+                            if (typeof ___grecaptcha_cfg !== 'undefined') {
+                                const clients = Object.values(___grecaptcha_cfg.clients || {});
+                                for (const c of clients) {
+                                    const callbacks = c.callback || [];
+                                    if (callbacks.length) callbacks.forEach(f => f(token));
+                                }
+                            }
+                            const cb = window.___recaptchaCallback || window.onRecaptchaSuccess;
+                            if (typeof cb === 'function') cb(token);
+                        }
+                        """,
+                        token,
+                    )
+                    logger.debug("Токен подставлен, ждём 2 секунды")
+                    await page.wait_for_timeout(2000)
 
-                        logger.debug("Поиск кнопки submit")
-                        submit_button = await page.query_selector(
-                            'input[type="submit"][value="weiter"].button.expanded'
-                        )
-                        if submit_button:
-                            logger.info("Кнопка submit найдена — кликаем")
-                            await submit_button.click()
-                            logger.debug("Ожидание networkidle после submit")
-                            try:
-                                await page.wait_for_load_state(
-                                    "networkidle", timeout=30000
-                                )
-                                logger.info("Редирект завершён")
-                            except Exception:
-                                logger.warning("Ожидание редиректа не сработало")
+                    # Cookie consent
+                    logger.info("Проверка баннера cookie consent")
+                    deny_btn = page.locator(
+                        'div.buttons-row button[data-action-type="deny"], button.uc-deny-button, #deny'
+                    ).first
+                    try:
+                        await deny_btn.wait_for(state="visible", timeout=10000)
+                        logger.info("Баннер cookie consent найден - кликаем 'Ablehnen'")
+                        await deny_btn.click()
+                        await page.wait_for_timeout(1000)
+                    except Exception:
+                        logger.debug("Баннер cookie consent не появился")
 
-                            logger.info(f"Текущий URL после submit: {page.url}")
-                        else:
-                            logger.warning("Кнопка submit не найдена")
+                    logger.debug("Поиск кнопки submit")
+                    submit_button = await page.query_selector(
+                        'input[type="submit"][value="weiter"].button.expanded'
+                    )
+                    if submit_button:
+                        logger.info("Кнопка submit найдена - кликаем")
+                        await submit_button.click()
+                        try:
+                            await page.wait_for_load_state("networkidle", timeout=30000)
+                            logger.info("Редирект завершён")
+                        except Exception:
+                            logger.warning("Ожидание редиректа не сработало")
+
+                        logger.info(f"Текущий URL после submit: {page.url}")
                     else:
-                        logger.warning("Не удалось получить токен от RuCaptcha")
+                        logger.warning("Кнопка submit не найдена")
                 else:
-                    logger.warning("Капча нужна, но sitekey или ключ API не найден")
+                    logger.warning("Не удалось получить токен от RuCaptcha")
+            else:
+                logger.warning("Капча нужна, но sitekey или ключ API не найден")
 
             # Собираем куки
-            logger.debug("Сбор куки из контекста")
             raw_cookies = await context.cookies()
             logger.info(f"Получено сырых куки: {len(raw_cookies)} шт")
 
             if len(raw_cookies) <= 11:
-                logger.warning(f"Мало куки ({len(raw_cookies)} < 10) — ретрай")
+                logger.warning(f"Мало куки ({len(raw_cookies)} < 10) - ретрай")
                 return None
 
             cookies_dict = {c["name"]: c["value"] for c in raw_cookies}
@@ -168,14 +157,11 @@ async def get_cookies_via_playwright(
                 f"after_captcha={after_captcha} | proxy={used_proxy_str}"
             )
             return cookies_dict, used_proxy_str, after_captcha
-
         except Exception:
             logger.error("Ошибка Playwright", exc_info=True)
         finally:
             logger.debug("Закрытие браузера")
             await browser.close()
-
-    logger.warning("Не удалось получить куки после всех попыток")
     return None
 
 
