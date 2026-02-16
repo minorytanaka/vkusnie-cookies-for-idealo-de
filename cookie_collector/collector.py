@@ -46,7 +46,7 @@ async def get_cookies_via_playwright(
             logger.info(f"Переход по URL: {page_url}")
 
             response = await page.goto(
-                page_url, wait_until="domcontentloaded", timeout=page_timeout
+                page_url, wait_until="commit", timeout=page_timeout
             )
 
             status = response.status if response else 0
