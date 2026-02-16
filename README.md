@@ -94,7 +94,7 @@ sh start.sh
 
 ### 6. Запустить API
 ```
-cd ../api
+cd api
 sh start.sh
 ```
 
@@ -104,3 +104,9 @@ http://localhost:8000/docs (Swagger)
 Основные эндпоинты:
 - GET /latest-cookie - самая свежая кука
 - GET /random-cookie - случайная
+
+### 7. Запустить очистку куков
+```
+cd cookie_cleaner
+sh start.sh
+```
