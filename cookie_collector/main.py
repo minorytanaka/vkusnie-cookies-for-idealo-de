@@ -7,7 +7,7 @@ import sys
 import os
 
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from api.models import Base, Cookie
 from sqlalchemy import create_engine
@@ -16,7 +16,13 @@ import config
 from collector import get_cookies_via_playwright
 from typing import Optional
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler("cookie_collector.log", encoding="utf-8"),
+    ],
+)
 logger = logging.getLogger("collector")
 
 
