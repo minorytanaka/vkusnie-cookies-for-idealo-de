@@ -12,7 +12,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
-    handlers=[logging.StreamHandler(), logging.FileHandler("cookie_collector.log", encoding="utf-8")],
+    handlers=[logging.StreamHandler()],
 )
 
 
@@ -63,15 +63,21 @@ async def get_cookies_via_playwright(
                 el = await page.query_selector("[data-sitekey]")
                 if el:
                     sitekey = await el.get_attribute("data-sitekey")
-                    logger.info(f"[{task_id}] Найден sitekey в основном документе: {sitekey}")
+                    logger.info(
+                        f"[{task_id}] Найден sitekey в основном документе: {sitekey}"
+                    )
                 if not sitekey:
-                    logger.info(f"[{task_id}] sitekey не найден в основном, ищем в iframe")
+                    logger.info(
+                        f"[{task_id}] sitekey не найден в основном, ищем в iframe"
+                    )
                     frame = page.frame_locator("iframe[src*='recaptcha']").first
                     if frame:
                         el = await frame.locator(".g-recaptcha[data-sitekey]").first
                         if el:
                             sitekey = await el.get_attribute("data-sitekey")
-                            logger.info(f"[{task_id}] Найден sitekey в iframe: {sitekey}")
+                            logger.info(
+                                f"[{task_id}] Найден sitekey в iframe: {sitekey}"
+                            )
             except Exception as e:
                 logger.warning(f"[{task_id}] Не удалось найти sitekey: {e}")
 
@@ -79,7 +85,9 @@ async def get_cookies_via_playwright(
                 logger.info(f"[{task_id}] Начинаем решение капчи | sitekey={sitekey}")
                 token = solve_recaptcha_rucaptcha(sitekey, page_url, rucaptcha_api_key)
                 if token:
-                    logger.info(f"[{task_id}] Токен успешно получен, подставляем в страницу")
+                    logger.info(
+                        f"[{task_id}] Токен успешно получен, подставляем в страницу"
+                    )
                     await page.evaluate(
                         """
                         (token) => {
@@ -112,7 +120,9 @@ async def get_cookies_via_playwright(
                     ).first
                     try:
                         await deny_btn.wait_for(state="visible", timeout=10000)
-                        logger.info(f"[{task_id}] Баннер cookie consent найден - кликаем 'Ablehnen'")
+                        logger.info(
+                            f"[{task_id}] Баннер cookie consent найден - кликаем 'Ablehnen'"
+                        )
                         await deny_btn.click()
                         await page.wait_for_timeout(1000)
                     except Exception:
@@ -128,22 +138,30 @@ async def get_cookies_via_playwright(
                             await page.wait_for_load_state("networkidle", timeout=30000)
                             logger.info(f"[{task_id}] Редирект завершён")
                         except Exception:
-                            logger.warning(f"[{task_id}] Ожидание редиректа не сработало")
+                            logger.warning(
+                                f"[{task_id}] Ожидание редиректа не сработало"
+                            )
 
                         logger.info(f"[{task_id}] Текущий URL после submit: {page.url}")
                     else:
                         logger.warning(f"[{task_id}] Кнопка submit не найдена")
                 else:
-                    logger.warning(f"[{task_id}] Не удалось получить токен от RuCaptcha")
+                    logger.warning(
+                        f"[{task_id}] Не удалось получить токен от RuCaptcha"
+                    )
             else:
-                logger.warning(f"[{task_id}] Капча нужна, но sitekey или ключ API не найден")
+                logger.warning(
+                    f"[{task_id}] Капча нужна, но sitekey или ключ API не найден"
+                )
 
             # Собираем куки
             raw_cookies = await context.cookies()
             logger.info(f"[{task_id}] Получено сырых куки: {len(raw_cookies)} шт")
 
             if len(raw_cookies) <= 11:
-                logger.warning(f"[{task_id}] Мало куки ({len(raw_cookies)} < 10) - ретрай")
+                logger.warning(
+                    f"[{task_id}] Мало куки ({len(raw_cookies)} < 10) - ретрай"
+                )
                 return None
 
             cookies_dict = {c["name"]: c["value"] for c in raw_cookies}

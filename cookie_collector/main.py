@@ -19,9 +19,6 @@ from typing import Optional
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler("cookie_collector.log", encoding="utf-8"),
-    ],
 )
 logger = logging.getLogger("collector")
 
