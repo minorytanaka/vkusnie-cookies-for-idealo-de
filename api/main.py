@@ -92,7 +92,7 @@ async def start_collector():
     if is_running():
         raise HTTPException(409, detail="Сборщик куков уже запущен")
 
-    cmd = ["uv", "run", "python", "cookie_collector.py"]
+    cmd = ["uv", "run", "python", "main.py"]
 
     # Параметры для создания полностью независимого процесса
     kwargs = {
@@ -128,3 +128,41 @@ async def start_collector():
 
     except Exception as e:
         raise HTTPException(500, detail=f"Не удалось запустить сборщик: {str(e)}")
+
+
+@app.post("/stop_cookie_collector")
+async def stop_collector():
+    if not is_running():
+        return {"status": "not running"}
+
+    try:
+        with open(PID_FILE, "r") as f:
+            pid = int(f.read().strip())
+
+        if platform.system() == "Windows":
+            # На Windows проще убить по PID через taskkill
+            subprocess.run(["taskkill", "/PID", str(pid), "/F"], check=False)
+        else:
+            # Linux: убиваем группу процессов (pgid = pid при setsid)
+            os.killpg(os.getpgid(pid), 15)   # SIGTERM группе
+            # Если не умер — жёстко
+            import time
+            time.sleep(4)
+            try:
+                os.killpg(os.getpgid(pid), 9)  # SIGKILL
+            except ProcessLookupError:
+                pass
+
+        PID_FILE.unlink(missing_ok=True)
+        return {"status": "stopped"}
+
+    except Exception as e:
+        raise HTTPException(500, detail=f"Ошибка при остановке: {str(e)}")
+
+
+@app.get("/collector_status")
+async def collector_status():
+    return {
+        "running": is_running(),
+        "pid_file_exists": PID_FILE.exists()
+    }
