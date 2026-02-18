@@ -28,9 +28,8 @@ async def collector_task(task_id: int, session_factory: sessionmaker):
     while True:
         try:
             page_url = random.choice(config.PAGE_URL_POOL)
-            logger.info(f"[collector-{task_id}] Начинаем сбор → {page_url}")
-
             result: Optional[tuple[dict, str, bool]] = await get_cookies_via_playwright(
+                task_id=task_id,
                 page_url=page_url,
                 proxy_pool=config.PROXY_POOL,
                 rucaptcha_api_key=config.RUCAPTCHA_API_KEY,
