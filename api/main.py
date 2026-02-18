@@ -132,14 +132,34 @@ async def start_collector():
 
 @app.post("/stop_cookie_collector")
 async def stop_collector():
-    if platform.system() == "Windows":
-        # Убиваем все python-процессы, запущенные из этой директории (или с определённым названием)
-        # Вариант А - по имени скрипта (если видно в командной строке)
-        subprocess.run(
-            'taskkill /IM python.exe /F /FI "WINDOWTITLE eq *run_collector.py*"',
-            shell=True, check=False
-        )
+    killed = False
 
-    # На всякий случай чистим PID-файл
+    # 1. Убиваем все python-процессы, которые запущены из твоей директории или с твоим скриптом
+    # Но чтобы не задеть другие python — комбинируем с поиском по командной строке
+    try:
+        # taskkill не фильтрует по полной command line напрямую, поэтому используем wmic или PowerShell
+        # Вариант через PowerShell (самый точный)
+        ps_cmd = (
+            r'powershell -Command "Get-Process -Name python | '
+            r'Where-Object { $_.CommandLine -like ''*run_collector.py*'' } | '
+            r'Stop-Process -Force"'
+        )
+        result = subprocess.run(ps_cmd, shell=True, capture_output=True, text=True)
+        if result.returncode == 0:
+            killed = True
+            logger.info("Stopped via PowerShell filter by command line")
+        else:
+            logger.warning(f"PowerShell kill attempt: {result.stderr}")
+    except Exception as e:
+        logger.error(f"PowerShell kill failed: {e}")
+
+    # 2. Запасной вариант — убить все chromium/msedge от Playwright (браузеры часто висят)
+    for browser in ["chrome.exe", "msedge.exe", "chromium.exe"]:
+        subprocess.run(f"taskkill /IM {browser} /F /T", shell=True, check=False)
+
     PID_FILE.unlink(missing_ok=True)
-    return {"status": "stop signal sent"}
+
+    return {
+        "status": "stop signal sent",
+        "killed_something": killed
+    }
