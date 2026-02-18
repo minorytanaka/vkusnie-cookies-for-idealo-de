@@ -1,7 +1,16 @@
 import logging
 from datetime import datetime
 import time
-from sqlalchemy import create_engine, func, Boolean, Column, DateTime, Integer, String, delete
+from sqlalchemy import (
+    create_engine,
+    func,
+    Boolean,
+    Column,
+    DateTime,
+    Integer,
+    String,
+    delete,
+)
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker, declarative_base
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -14,14 +23,14 @@ DB_NAME = "cookies"
 DB_HOST = "localhost"
 DB_PORT = 5432
 
-MIN_COUNT_TO_CLEAN = 15
-INTERVAL_MINUTES = 25
+MIN_COUNT_TO_CLEAN = 25
+INTERVAL_MINUTES = 30
 
 # ------------------- Логирование -------------------
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s | %(levelname)-7s | %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    format="%(asctime)s | %(levelname)-7s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger("cookie-cleaner")
 
@@ -48,14 +57,31 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False
 def cleanup_old_cookies():
     try:
         with SessionLocal() as session:
-            total_count = session.query(func.count(Cookie.id)).scalar()
-            
-            if total_count < MIN_COUNT_TO_CLEAN:
-                logger.info(f"Записей всего {total_count} < {MIN_COUNT_TO_CLEAN} → пропускаем")
+            total = session.query(func.count(Cookie.id)).scalar()
+
+            if total <= MIN_COUNT_TO_CLEAN:
+                logger.info(
+                    f"Записей всего {total}, меньше минимального значения: {MIN_COUNT_TO_CLEAN}, пропускаем"
+                )
                 return
 
-            to_delete = total_count // 2
-            logger.info(f"Найдено {total_count} записей → удаляем {to_delete} самых старых")
+            want_to_delete = total // 2
+            would_remain = total - want_to_delete
+
+            if would_remain < MIN_COUNT_TO_CLEAN:
+                to_delete = total - MIN_COUNT_TO_CLEAN
+                logger.info(
+                    f"Хотели удалить половину ({want_to_delete}), но осталось бы {would_remain} < {MIN_COUNT_TO_CLEAN}, удаляем {to_delete}"
+                )
+            else:
+                to_delete = want_to_delete
+                logger.info(f"Удаляем примерно половину: {to_delete} шт")
+
+            if to_delete <= 0:
+                logger.info("Ничего удалять не нужно после всех проверок")
+                return
+
+            # ────────────── само удаление ──────────────
 
             # Подзапрос на самые старые id
             subq = (
@@ -66,15 +92,14 @@ def cleanup_old_cookies():
             )
 
             # Удаляем по id из подзапроса
-            stmt = (
-                delete(Cookie)
-                .where(Cookie.id.in_(subq))
-            )
+            stmt = delete(Cookie).where(Cookie.id.in_(subq))
 
             result = session.execute(stmt)
             session.commit()
 
-            logger.info(f"Удалено {result.rowcount} записей")
+            logger.info(
+                f"Успешно удалено {result.rowcount} записей (из запланированных {to_delete})"
+            )
 
     except SQLAlchemyError as e:
         logger.error(f"Ошибка базы: {e}", exc_info=True)
@@ -84,18 +109,20 @@ def cleanup_old_cookies():
 
 def main():
     scheduler = BackgroundScheduler()
-    
+
     # Запускаем каждые INTERVAL_MINUTES минут
     scheduler.add_job(
         cleanup_old_cookies,
         trigger=IntervalTrigger(minutes=INTERVAL_MINUTES),
-        id='cookie_cleanup_job',
-        name='Удаление старых cookies каждые 40 минут',
-        replace_existing=True
+        id="cookie_cleanup_job",
+        name="Удаление старых cookies каждые {INTERVAL_MINUTES} минут",
+        replace_existing=True,
     )
 
-    logger.info(f"Планировщик запущен. Очистка каждые {INTERVAL_MINUTES} минут. "
-                f"Минимальное количество записей для очистки: {MIN_COUNT_TO_CLEAN}")
+    logger.info(
+        f"Планировщик запущен. Очистка каждые {INTERVAL_MINUTES} минут. "
+        f"Минимальное количество записей для очистки: {MIN_COUNT_TO_CLEAN}"
+    )
 
     try:
         scheduler.start()
